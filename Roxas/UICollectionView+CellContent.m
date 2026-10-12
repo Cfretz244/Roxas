@@ -84,6 +84,40 @@
             return;
         }
         
+        // The deferred batch can outlive the owning view controller (CATransaction completion). If the data
+        // source is gone, or the view left the window, or the counts no longer agree, there is nothing to
+        // animate: resync and bail instead of tripping UIKit's invalid-batch-update assertion.
+        id<UICollectionViewDataSource> dataSource = self.dataSource;
+        if (dataSource == nil || self.window == nil)
+        {
+            return;
+        }
+        
+        NSInteger sections = [dataSource respondsToSelector:@selector(numberOfSectionsInCollectionView:)] ? [dataSource numberOfSectionsInCollectionView:self] : 1;
+        if (sections != self.numberOfSections)
+        {
+            [self reloadData];
+            return;
+        }
+        
+        for (NSInteger section = 0; section < sections; section++)
+        {
+            if ([dataSource collectionView:self numberOfItemsInSection:section] != [self numberOfItemsInSection:section])
+            {
+                [self reloadData];
+                return;
+            }
+        }
+        
+        for (RSTCellContentChangeOperation *operation in postMoveUpdateOperations)
+        {
+            NSIndexPath *indexPath = operation.change.currentIndexPath;
+            if (indexPath.section >= sections || indexPath.item >= [self numberOfItemsInSection:indexPath.section])
+            {
+                return;
+            }
+        }
+        
         // Perform additional updates after any moved items have been moved.
         // These additional updates must be performed after the first batch of operations have finished animating, or else the animation looks weird.
         [self performBatchUpdates:^{
